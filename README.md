@@ -11,6 +11,20 @@ Cette boîte à outils regroupe des scripts et utilitaires PowerShell conçus po
 Elle est pensée pour être utilisée par les équipes support, infogérance ou projet, directement depuis un partage réseau ou un dépôt GitHub.
 
 ---
+## 📦 Arborescence du dépôt
+
+```text
+.
+├── Config/                 # Fichiers de configuration
+│   ├── config_interface.yaml
+│   └── config_menu.yaml
+├── Logs/                   # Sorties et journaux d’exécution
+├── Options/                # Modules et scripts optionnels
+│   └── Clear-DiskSpace.ps1 # Nettoyage de l’espace disque
+├── main.ps1                # Script principal d’exécution
+└── README.md               # Documentation du dépôt
+
+---
 
 ## 📦 Contenu actuel
 
