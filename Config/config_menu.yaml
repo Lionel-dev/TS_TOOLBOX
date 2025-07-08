@@ -1,20 +1,30 @@
+# Config/config_menu.yaml
 MenuOptions:
   - label: "Nettoyer l'espace disque"
     function: "Clear-DiskSpace"
+    SupportsDemo: false
     params: {}
   - label: "Désinstaller Teams (tous utilisateurs)"
     function: "Uninstall-TeamsForAll"
+    SupportsDemo: false
     params: {}
   - label: "Désinstaller Teams (groupe CVG)"
     function: "Uninstall-TeamsForGroup"
+    SupportsDemo: false
     params:
       ADGroupName: "CVG"
   - label: "Redémarrer le service RDP"
     function: "Restart-RDPService"
+    SupportsDemo: false
     params: {}
   - label: "Vérifier l'état du disque"
     function: "Check-DiskStatus"
+    SupportsDemo: false
     params: {}
   - label: "Compresser les images"
     function: "Compress-Images"
-    params: {}
+    SupportsDemo: true
+    params:
+      FolderPath: ""
+      Quality: 80
+      DateLimit: "YYYY-MM-DD"
