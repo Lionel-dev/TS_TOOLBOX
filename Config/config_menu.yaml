@@ -1,0 +1,20 @@
+MenuOptions:
+  - label: "Nettoyer l'espace disque"
+    function: "Clear-DiskSpace"
+    params: {}
+  - label: "Désinstaller Teams (tous utilisateurs)"
+    function: "Uninstall-TeamsForAll"
+    params: {}
+  - label: "Désinstaller Teams (groupe CVG)"
+    function: "Uninstall-TeamsForGroup"
+    params:
+      ADGroupName: "CVG"
+  - label: "Redémarrer le service RDP"
+    function: "Restart-RDPService"
+    params: {}
+  - label: "Vérifier l'état du disque"
+    function: "Check-DiskStatus"
+    params: {}
+  - label: "Compresser les images"
+    function: "Compress-Images"
+    params: {}
