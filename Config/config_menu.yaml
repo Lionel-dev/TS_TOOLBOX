@@ -1,4 +1,3 @@
-# Config/config_menu.yaml
 MenuOptions:
   - label: "Nettoyer l'espace disque"
     function: "Clear-DiskSpace"

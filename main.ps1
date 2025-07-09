@@ -20,7 +20,7 @@ if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out
 # --- Log quotidien ---
 $user    = $env:USERNAME
 $date    = (Get-Date).ToString('yyyy-MM-dd')
-$logFile = Join-Path $logDir "$user`_$date.txt"
+$logFile = Join-Path $logDir "$user_$date.txt"
 
 # --- Charger YAML avec UTF8 ---
 $configMenu      = Get-Content $configMenuFile      -Raw -Encoding UTF8 | ConvertFrom-Yaml
@@ -28,17 +28,32 @@ $configInterface = Get-Content $configInterfaceFile -Raw -Encoding UTF8 | Conver
 $UI              = $configInterface.Interface
 $MenuOptions     = $configMenu.MenuOptions
 
-# --- Mode Démo ---
-$DemoMode      = $true
-$passwordInput = [Microsoft.VisualBasic.Interaction]::InputBox(
-    "Mot de passe pour passer en mode réel (laissez vide pour démo) :", $UI.Title
-)
-if ($passwordInput -eq $UI.DemoPassword) {
-    $DemoMode = $false
-    [System.Windows.Forms.MessageBox]::Show("Mode réel activé.", $UI.Title) | Out-Null
-} else {
-    [System.Windows.Forms.MessageBox]::Show("Mode démo actif.", $UI.Title) | Out-Null
+# --- Choix Mode Démo / Production ---
+function Choose-Mode {
+    $chooser = New-Object System.Windows.Forms.Form
+    $chooser.Text = "$($UI.Title)™ - Sélection du mode"
+    $chooser.Size = New-Object System.Drawing.Size(300,120)
+    $chooser.StartPosition = 'CenterScreen'
+
+    $btnDemo = New-Object System.Windows.Forms.Button
+    $btnDemo.Text = 'Mode Démo'
+    $btnDemo.Size = New-Object System.Drawing.Size(100,30)
+    $btnDemo.Location = New-Object System.Drawing.Point(30,40)
+    $btnDemo.Add_Click({ $chooser.Tag = $true; $chooser.Close() })
+    $chooser.Controls.Add($btnDemo) | Out-Null
+
+    $btnProd = New-Object System.Windows.Forms.Button
+    $btnProd.Text = 'Mode Prod'
+    $btnProd.Size = New-Object System.Drawing.Size(100,30)
+    $btnProd.Location = New-Object System.Drawing.Point(160,40)
+    $btnProd.Add_Click({ $chooser.Tag = $false; $chooser.Close() })
+    $chooser.Controls.Add($btnProd) | Out-Null
+
+    [void]$chooser.ShowDialog()
+    return [bool]$chooser.Tag
 }
+
+$DemoMode = Choose-Mode
 
 # --- Import des scripts d'options ---
 Get-ChildItem $optionsDir -Filter '*.ps1' | ForEach-Object { . $_.FullName }
@@ -48,10 +63,11 @@ function Write-Log {
     param([string]$msg)
     $ts    = (Get-Date).ToString('HH:mm:ss')
     $entry = "[$ts] $msg"
-    $script:txtLog.AppendText($entry + "`r`n")
+    $script:txtLog.AppendText($entry + "rn")
     Add-Content -Path $logFile -Value $entry
     [System.Windows.Forms.Application]::DoEvents()
 }
+
 function Prompt-ForParams {
     param($params)
     $res = @{}
@@ -66,54 +82,39 @@ function Prompt-ForParams {
     return $res
 }
 
-# --- Construction de l'UI ---
+# --- Construction de l'UI Principale ---
 function Build-Form {
-    param($UI, $MenuOptions)
+    param($UI, $MenuOptions, $DemoMode)
+
+    if ($DemoMode) {
+        $menuOptionsLoc = $MenuOptions | Where-Object { $_.SupportsDemo }
+    } else {
+        $menuOptionsLoc = $MenuOptions
+    }
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text          = "$($UI.Title)™"
+    $titleSuffix = if ($DemoMode) { ' (Démo)' } else { ' (Prod)' }
+    $form.Text = "$($UI.Title)™$titleSuffix"
     $form.Size          = New-Object System.Drawing.Size($UI.Size.Width, $UI.Size.Height)
     $form.StartPosition = $UI.StartPosition
 
-    #
-    # ListBox propriétaire du dessin
-    #
     $lb = New-Object System.Windows.Forms.ListBox
     $lb.Location      = New-Object System.Drawing.Point($UI.ListBox.Location.X, $UI.ListBox.Location.Y)
     $lb.Size          = New-Object System.Drawing.Size($UI.ListBox.Size.Width, $UI.ListBox.Size.Height)
-    $lb.DrawMode      = 'OwnerDrawFixed'
-    $lb.ItemHeight    = 20
-    $lb.DisplayMember = 'Text'        # à placer avant Items.Add
-    $lb.ValueMember   = 'OriginalId'  # SelectedValue sera l’index original
+    $lb.DisplayMember = 'label'
 
-    # Préparer les objets à ajouter
-    $items = for ($i=0; $i -lt $MenuOptions.Count; $i++) {
-        $lbl = $MenuOptions[$i].label
-        if ($MenuOptions[$i].SupportsDemo) { $lbl += ' (démo)' }
-        else                                { $lbl += ' (non démo)' }
-        [PSCustomObject]@{
-            Text        = $lbl
-            OriginalId  = $i
-            SupportsDemo= $MenuOptions[$i].SupportsDemo
-        }
-    }
-    # Trier en mode démo
-    if ($DemoMode) {
-        $items = $items | Sort-Object @{Expression={ [int]$_.SupportsDemo }} -Descending
-    }
-    foreach ($it in $items) {
-        $lb.Items.Add($it) | Out-Null
+    foreach ($opt in $menuOptionsLoc) {
+        $lbl = $opt.label
+        if ($opt.SupportsDemo) { $lbl += ' (démo)' } else { $lbl += ' (non démo)' }
+        $lb.Items.Add([PSCustomObject]@{ label=$lbl; ScriptName=$opt.function; params=$opt.params }) | Out-Null
     }
     $form.Controls.Add($lb) | Out-Null
 
-    #
-    # Boutons
-    #
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text     = $UI.Buttons.Run.Text
     $btnRun.Location = New-Object System.Drawing.Point($UI.Buttons.Run.Location.X, $UI.Buttons.Run.Location.Y)
     $btnRun.Size     = New-Object System.Drawing.Size($UI.Buttons.Run.Size.Width, $UI.Buttons.Run.Size.Height)
-    $btnRun.Enabled  = $false
+    $btnRun.Enabled  = $true
     $form.Controls.Add($btnRun) | Out-Null
 
     $btnExit = New-Object System.Windows.Forms.Button
@@ -123,22 +124,17 @@ function Build-Form {
     $btnExit.Add_Click({ $form.Close() }) | Out-Null
     $form.Controls.Add($btnExit) | Out-Null
 
-    # Trademark à droite
     $lblTM = New-Object System.Windows.Forms.Label
     $lblTM.Text     = 'Convergence-IT™'
     $lblTM.AutoSize = $true
-    $x = $btnExit.Right + 10
-    $y = $btnExit.Top + [int](($btnExit.Height - $lblTM.PreferredHeight) / 2)
+    $bounds = $btnExit.Bounds
+    $x = $bounds.Right + 10
+    $y = $bounds.Top + [int](($btnExit.Height - $lblTM.PreferredHeight) / 2)
     $lblTM.Location = New-Object System.Drawing.Point($x, $y)
     $form.Controls.Add($lblTM) | Out-Null
 
-    #
-    # Zone de log et ProgressBar
-    #
     $txtLog = New-Object System.Windows.Forms.TextBox
-    $txtLog.Multiline  = $true
-    $txtLog.ReadOnly   = $true
-    $txtLog.ScrollBars = 'Vertical'
+    $txtLog.Multiline  = $true; $txtLog.ReadOnly   = $true; $txtLog.ScrollBars = 'Vertical'
     $txtLog.Location   = New-Object System.Drawing.Point($UI.LogTextBox.Location.X, $UI.LogTextBox.Location.Y)
     $txtLog.Size       = New-Object System.Drawing.Size($UI.LogTextBox.Size.Width, $UI.LogTextBox.Size.Height)
     $form.Controls.Add($txtLog) | Out-Null
@@ -146,70 +142,39 @@ function Build-Form {
     $pb = New-Object System.Windows.Forms.ProgressBar
     $pb.Location = New-Object System.Drawing.Point($UI.ProgressBar.Location.X, $UI.ProgressBar.Location.Y)
     $pb.Size     = New-Object System.Drawing.Size($UI.ProgressBar.Size.Width, $UI.ProgressBar.Size.Height)
-    $pb.Minimum  = $UI.ProgressBar.Minimum
-    $pb.Maximum  = $UI.ProgressBar.Maximum
+    $pb.Minimum  = $UI.ProgressBar.Minimum; $pb.Maximum = $UI.ProgressBar.Maximum
     $form.Controls.Add($pb) | Out-Null
 
-    #
-    # Owner-draw pour griser les non compatibles
-    #
-    $lb.Add_DrawItem({
-        param($s,$e)
-        $item     = $s.Items[$e.Index]
-        $disabled = $DemoMode -and -not $item.SupportsDemo
-        $e.DrawBackground()
-        if ($e.State -band [System.Windows.Forms.DrawItemState]::Selected) {
-            $e.Graphics.FillRectangle([System.Drawing.SystemBrushes]::Highlight, $e.Bounds)
-            $brush = [System.Drawing.SystemBrushes]::HighlightText
-        } else {
-            $brush = if ($disabled) {[System.Drawing.Brushes]::Gray} else {[System.Drawing.Brushes]::Black}
-        }
-        $e.Graphics.DrawString($item.Text, $s.Font, $brush, [System.Drawing.RectangleF]$e.Bounds)
-        $e.DrawFocusRectangle()
-    })
+    $lb.Add_SelectedIndexChanged({ $btnRun.Enabled = $true })
 
-    #
-    # Activation du bouton Exécuter sur sélection
-    #
-    $lb.Add_SelectedIndexChanged({
-        $orig = $lb.SelectedValue
-        if ($null -eq $orig) {
-            $btnRun.Enabled = $false; return
-        }
-        $opt = $MenuOptions[$orig]
-        $btnRun.Enabled = (-not $DemoMode) -or $opt.SupportsDemo
-    })
-    if ($lb.Items.Count -gt 0) { $lb.SelectedIndex = 0 }
-
-    #
-    # Logique d’exécution
-    #
     $btnRun.Add_Click({
-        $orig = $lb.SelectedValue
-        $opt  = $MenuOptions[$orig]
-        Write-Log "Option : $($opt.function)"
-        if ($DemoMode) {
-            Write-Log "MODE DÉMO — simulation"
+        $item = $lb.SelectedItem
+        Write-Log "Exécution de $($item.ScriptName) en mode demo=$DemoMode"
+        $splat = @{ demo = $DemoMode }
+        if ($item.params.Count -gt 0) {
+            $p = Prompt-ForParams $item.params
+            if ($null -eq $p) { Write-Log "Annulé"; return }
+            $splat += $p
+        }
+                # Vérifier que ScriptName n'est pas nul ou vide
+        if ([string]::IsNullOrWhiteSpace($item.ScriptName)) {
+            Write-Log "Erreur: nom de script manquant pour l'option sélectionnée"
+            return
+        }
+        if (Get-Command $item.ScriptName -ErrorAction SilentlyContinue) {
+            & $item.ScriptName @splat
+        } elseif (Test-Path (Join-Path $optionsDir ($item.ScriptName + '.ps1'))) {
+            & (Join-Path $optionsDir ($item.ScriptName + '.ps1')) @splat
         } else {
-            $splat = @{}
-            if ($opt.params.Count -gt 0) {
-                $p = Prompt-ForParams $opt.params
-                if ($null -eq $p) { Write-Log "Annulé"; return }
-                $splat = $p
-            }
-            & $opt.function @splat
+            Write-Log "Erreur: impossible de trouver la commande ou le script '$($item.ScriptName)'"
         }
         Write-Log "Terminé"
     })
 
-    # Expose pour Write-Log et ProgressBar
-    $script:txtLog = $txtLog
-    $script:pb     = $pb
-
+    $script:txtLog = $txtLog; $script:pb = $pb
     return $form
 }
 
-# --- Lancement ---
 Remove-Variable form -ErrorAction SilentlyContinue
-$mainForm = Build-Form -UI $UI -MenuOptions $MenuOptions
+$mainForm = Build-Form -UI $UI -MenuOptions $MenuOptions -DemoMode $DemoMode
 [void]$mainForm.ShowDialog()
