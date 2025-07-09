@@ -1,180 +1,211 @@
-﻿# main.ps1
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName Microsoft.VisualBasic  # Pour InputBox
+﻿Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName Microsoft.VisualBasic
 
-# --- Charger ConvertFrom-Yaml si besoin ---
 if (-not (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue)) {
-    Install-Module -Name powershell-yaml -Force -Scope CurrentUser -SkipPublisherCheck
+    Write-Error "Le module powershell-yaml est requis. Installez-le avec : Install-Module -Name powershell-yaml -Scope CurrentUser"
+    exit 1
+} else {
     Import-Module powershell-yaml
 }
 
-# --- Chemins ---
+function Write-Log {
+    param([string]$msg, [string]$color = 'Black')
+    $ts = (Get-Date -Format 'HH:mm:ss')
+    $line = "[$ts] $msg"
+    if ($script:txtLog -and -not $script:txtLog.IsDisposed) {
+        $script:txtLog.SelectionStart = $script:txtLog.TextLength
+        $script:txtLog.SelectionColor = [System.Drawing.Color]::$color
+        $script:txtLog.AppendText("$line`r`n")
+        $script:txtLog.SelectionColor = $script:txtLog.ForeColor
+        [System.Windows.Forms.Application]::DoEvents()
+    } else {
+        Write-Host $line
+    }
+}
+
+function Load-YamlFile ($path) {
+    if (-not (Test-Path $path)) {
+        throw "Fichier YAML manquant: $path"
+    }
+    Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Yaml
+}
+
+class MenuItem {
+    [string]$label
+    [string]$ScriptName
+    [hashtable]$params
+
+    MenuItem([string]$label, [string]$ScriptName, [hashtable]$params) {
+        $this.label      = $label
+        $this.ScriptName = $ScriptName
+        $this.params     = $params
+    }
+
+    [string] ToString() {
+        return $this.label
+    }
+}
+
 $scriptDir           = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $configDir           = Join-Path $scriptDir 'Config'
+$optionsDir          = Join-Path $scriptDir 'Options'
 $configMenuFile      = Join-Path $configDir 'config_menu.yaml'
 $configInterfaceFile = Join-Path $configDir 'config_interface.yaml'
-$optionsDir          = Join-Path $scriptDir 'Options'
-$logDir              = Join-Path $scriptDir 'Logs'
-if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
 
-# --- Log quotidien ---
-$user    = $env:USERNAME
-$date    = (Get-Date).ToString('yyyy-MM-dd')
-$logFile = Join-Path $logDir "$user_$date.txt"
+try {
+    $configMenu      = Load-YamlFile $configMenuFile
+    $configInterface = Load-YamlFile $configInterfaceFile
+} catch {
+    Write-Error $_.Exception.Message
+    exit 1
+}
 
-# --- Charger YAML avec UTF8 ---
-$configMenu      = Get-Content $configMenuFile      -Raw -Encoding UTF8 | ConvertFrom-Yaml
-$configInterface = Get-Content $configInterfaceFile -Raw -Encoding UTF8 | ConvertFrom-Yaml
-$UI              = $configInterface.Interface
-$MenuOptions     = $configMenu.MenuOptions
+$UI          = $configInterface.Interface
+$ModeChooser = $configInterface.ModeChooser
+$MenuOptions = $configMenu.MenuOptions
 
-# --- Choix Mode Démo / Production ---
+Get-ChildItem -Path $optionsDir -Filter *.ps1 | ForEach-Object {
+    Write-Log "Chargement: $($_.Name)" 'DarkGreen'
+    . $_.FullName
+}
+
 function Choose-Mode {
-    $chooser = New-Object System.Windows.Forms.Form
-    $chooser.Text = "$($UI.Title)™ - Sélection du mode"
-    $chooser.Size = New-Object System.Drawing.Size(300,120)
-    $chooser.StartPosition = 'CenterScreen'
+    $cfg = $ModeChooser
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $cfg.Title
+    $form.Size = New-Object System.Drawing.Size($cfg.Size.Width, $cfg.Size.Height)
+    $form.StartPosition = 'CenterScreen'
 
     $btnDemo = New-Object System.Windows.Forms.Button
-    $btnDemo.Text = 'Mode Démo'
-    $btnDemo.Size = New-Object System.Drawing.Size(100,30)
-    $btnDemo.Location = New-Object System.Drawing.Point(30,40)
-    $btnDemo.Add_Click({ $chooser.Tag = $true; $chooser.Close() })
-    $chooser.Controls.Add($btnDemo) | Out-Null
+    $btnDemo.Text = $cfg.Buttons.Demo.Text
+    $btnDemo.Size = New-Object System.Drawing.Size($cfg.Buttons.Demo.Size.Width, $cfg.Buttons.Demo.Size.Height)
+    $btnDemo.Location = New-Object System.Drawing.Point($cfg.Buttons.Demo.Location.X, $cfg.Buttons.Demo.Location.Y)
+    $btnDemo.Add_Click({ $form.Tag = $true; $form.Close() }) | Out-Null
+    $form.Controls.Add($btnDemo) | Out-Null
 
     $btnProd = New-Object System.Windows.Forms.Button
-    $btnProd.Text = 'Mode Prod'
-    $btnProd.Size = New-Object System.Drawing.Size(100,30)
-    $btnProd.Location = New-Object System.Drawing.Point(160,40)
-    $btnProd.Add_Click({ $chooser.Tag = $false; $chooser.Close() })
-    $chooser.Controls.Add($btnProd) | Out-Null
+    $btnProd.Text = $cfg.Buttons.Prod.Text
+    $btnProd.Size = New-Object System.Drawing.Size($cfg.Buttons.Prod.Size.Width, $cfg.Buttons.Prod.Size.Height)
+    $btnProd.Location = New-Object System.Drawing.Point($cfg.Buttons.Prod.Location.X, $cfg.Buttons.Prod.Location.Y)
+    $btnProd.Add_Click({ $form.Tag = $false; $form.Close() }) | Out-Null
+    $form.Controls.Add($btnProd) | Out-Null
 
-    [void]$chooser.ShowDialog()
-    return [bool]$chooser.Tag
+    $form.KeyPreview = $true
+    $form.Add_KeyDown({
+        if ($_.KeyCode -eq 'Escape') { $form.Tag = $false; $form.Close() }
+    }) | Out-Null
+
+    [void]$form.ShowDialog()
+    $form.Dispose()
+
+    return [bool]$form.Tag
 }
 
 $DemoMode = Choose-Mode
+Write-Log "Mode choisi : $(if ($DemoMode) {'Démo'})$(if (-not $DemoMode) {'Prod'})" 'Blue'
 
-# --- Import des scripts d'options ---
-Get-ChildItem $optionsDir -Filter '*.ps1' | ForEach-Object { . $_.FullName }
-
-# --- Utilitaires ---
-function Write-Log {
-    param([string]$msg)
-    $ts    = (Get-Date).ToString('HH:mm:ss')
-    $entry = "[$ts] $msg"
-    $script:txtLog.AppendText($entry + "rn")
-    Add-Content -Path $logFile -Value $entry
-    [System.Windows.Forms.Application]::DoEvents()
-}
-
-function Prompt-ForParams {
-    param($params)
-    $res = @{}
-    foreach ($k in $params.Keys) {
-        $default = [string]$params[$k]
-        $input   = [Microsoft.VisualBasic.Interaction]::InputBox(
-            "Valeur pour '$k' :", $UI.Title, $default
-        )
-        if ([string]::IsNullOrWhiteSpace($input)) { return $null }
-        $res[$k] = $input
-    }
-    return $res
-}
-
-# --- Construction de l'UI Principale ---
 function Build-Form {
     param($UI, $MenuOptions, $DemoMode)
 
-    if ($DemoMode) {
-        $menuOptionsLoc = $MenuOptions | Where-Object { $_.SupportsDemo }
-    } else {
-        $menuOptionsLoc = $MenuOptions
-    }
-
     $form = New-Object System.Windows.Forms.Form
-    $titleSuffix = if ($DemoMode) { ' (Démo)' } else { ' (Prod)' }
-    $form.Text = "$($UI.Title)™$titleSuffix"
-    $form.Size          = New-Object System.Drawing.Size($UI.Size.Width, $UI.Size.Height)
+    $form.Text = "$($UI.Title) $(if ($DemoMode) {'(Démo)'})"
+    $form.Size = New-Object System.Drawing.Size($UI.Size.Width, $UI.Size.Height)
     $form.StartPosition = $UI.StartPosition
 
     $lb = New-Object System.Windows.Forms.ListBox
-    $lb.Location      = New-Object System.Drawing.Point($UI.ListBox.Location.X, $UI.ListBox.Location.Y)
-    $lb.Size          = New-Object System.Drawing.Size($UI.ListBox.Size.Width, $UI.ListBox.Size.Height)
-    $lb.DisplayMember = 'label'
-
-    foreach ($opt in $menuOptionsLoc) {
-        $lbl = $opt.label
-        if ($opt.SupportsDemo) { $lbl += ' (démo)' } else { $lbl += ' (non démo)' }
-        $lb.Items.Add([PSCustomObject]@{ label=$lbl; ScriptName=$opt.function; params=$opt.params }) | Out-Null
-    }
+    $lb.Location = New-Object System.Drawing.Point($UI.ListBox.Location.X, $UI.ListBox.Location.Y)
+    $lb.Size = New-Object System.Drawing.Size($UI.ListBox.Size.Width, $UI.ListBox.Size.Height)
     $form.Controls.Add($lb) | Out-Null
+    $script:lb = $lb
+
+    foreach ($opt in $MenuOptions) {
+        if (-not $opt.function) { continue }
+        if ($DemoMode -and -not $opt.SupportsDemo) { continue }
+
+        $item = [MenuItem]::new($opt.label, $opt.function, $opt.params)
+        $lb.Items.Add($item) | Out-Null
+    }
+
+    Write-Log "DEBUG: Nombre d'éléments dans la ListBox = $($lb.Items.Count)" 'DarkGray'
+
+    if ($lb.Items.Count -gt 0) { $lb.SelectedIndex = 0 }
 
     $btnRun = New-Object System.Windows.Forms.Button
-    $btnRun.Text     = $UI.Buttons.Run.Text
+    $btnRun.Text = $UI.Buttons.Run.Text
     $btnRun.Location = New-Object System.Drawing.Point($UI.Buttons.Run.Location.X, $UI.Buttons.Run.Location.Y)
-    $btnRun.Size     = New-Object System.Drawing.Size($UI.Buttons.Run.Size.Width, $UI.Buttons.Run.Size.Height)
-    $btnRun.Enabled  = $true
+    $btnRun.Size = New-Object System.Drawing.Size($UI.Buttons.Run.Size.Width, $UI.Buttons.Run.Size.Height)
     $form.Controls.Add($btnRun) | Out-Null
 
-    $btnExit = New-Object System.Windows.Forms.Button
-    $btnExit.Text     = $UI.Buttons.Exit.Text
-    $btnExit.Location = New-Object System.Drawing.Point($UI.Buttons.Exit.Location.X, $UI.Buttons.Exit.Location.Y)
-    $btnExit.Size     = New-Object System.Drawing.Size($UI.Buttons.Exit.Size.Width, $UI.Buttons.Exit.Size.Height)
-    $btnExit.Add_Click({ $form.Close() }) | Out-Null
-    $form.Controls.Add($btnExit) | Out-Null
-
-    $lblTM = New-Object System.Windows.Forms.Label
-    $lblTM.Text     = 'Convergence-IT™'
-    $lblTM.AutoSize = $true
-    $bounds = $btnExit.Bounds
-    $x = $bounds.Right + 10
-    $y = $bounds.Top + [int](($btnExit.Height - $lblTM.PreferredHeight) / 2)
-    $lblTM.Location = New-Object System.Drawing.Point($x, $y)
-    $form.Controls.Add($lblTM) | Out-Null
-
-    $txtLog = New-Object System.Windows.Forms.TextBox
-    $txtLog.Multiline  = $true; $txtLog.ReadOnly   = $true; $txtLog.ScrollBars = 'Vertical'
+    $txtLog = New-Object System.Windows.Forms.RichTextBox
+    $txtLog.Multiline  = $true
+    $txtLog.ReadOnly   = $true
+    $txtLog.ScrollBars = 'Vertical'
     $txtLog.Location   = New-Object System.Drawing.Point($UI.LogTextBox.Location.X, $UI.LogTextBox.Location.Y)
     $txtLog.Size       = New-Object System.Drawing.Size($UI.LogTextBox.Size.Width, $UI.LogTextBox.Size.Height)
     $form.Controls.Add($txtLog) | Out-Null
+    $script:txtLog = $txtLog
 
     $pb = New-Object System.Windows.Forms.ProgressBar
     $pb.Location = New-Object System.Drawing.Point($UI.ProgressBar.Location.X, $UI.ProgressBar.Location.Y)
-    $pb.Size     = New-Object System.Drawing.Size($UI.ProgressBar.Size.Width, $UI.ProgressBar.Size.Height)
-    $pb.Minimum  = $UI.ProgressBar.Minimum; $pb.Maximum = $UI.ProgressBar.Maximum
+    $pb.Size = New-Object System.Drawing.Size($UI.ProgressBar.Size.Width, $UI.ProgressBar.Size.Height)
+    $pb.Minimum = $UI.ProgressBar.Minimum
+    $pb.Maximum = $UI.ProgressBar.Maximum
     $form.Controls.Add($pb) | Out-Null
+    $script:pb = $pb
 
-    $lb.Add_SelectedIndexChanged({ $btnRun.Enabled = $true })
+    $form.KeyPreview = $true
+    $form.Add_KeyDown({
+        if ($_.KeyCode -eq 'Escape') { $form.Close() }
+        if ($_.KeyCode -eq 'Enter') { $btnRun.PerformClick() }
+    }) | Out-Null
 
     $btnRun.Add_Click({
-        $item = $lb.SelectedItem
-        Write-Log "Exécution de $($item.ScriptName) en mode demo=$DemoMode"
-        $splat = @{ demo = $DemoMode }
-        if ($item.params.Count -gt 0) {
-            $p = Prompt-ForParams $item.params
-            if ($null -eq $p) { Write-Log "Annulé"; return }
-            $splat += $p
-        }
-                # Vérifier que ScriptName n'est pas nul ou vide
-        if ([string]::IsNullOrWhiteSpace($item.ScriptName)) {
-            Write-Log "Erreur: nom de script manquant pour l'option sélectionnée"
+        if ($script:lb.Items.Count -eq 0) {
+            Write-Log "La ListBox est vide" 'Red'
             return
         }
-        if (Get-Command $item.ScriptName -ErrorAction SilentlyContinue) {
-            & $item.ScriptName @splat
-        } elseif (Test-Path (Join-Path $optionsDir ($item.ScriptName + '.ps1'))) {
-            & (Join-Path $optionsDir ($item.ScriptName + '.ps1')) @splat
-        } else {
-            Write-Log "Erreur: impossible de trouver la commande ou le script '$($item.ScriptName)'"
+        if ($script:lb.SelectedIndex -lt 0) {
+            Write-Log "Aucun élément sélectionné" 'Red'
+            return
         }
-        Write-Log "Terminé"
-    })
 
-    $script:txtLog = $txtLog; $script:pb = $pb
+        $item = $script:lb.Items[$script:lb.SelectedIndex]
+
+        Write-Log "Sélection : $($item.label)" 'DarkCyan'
+
+        if (-not $item.ScriptName -or [string]::IsNullOrWhiteSpace($item.ScriptName)) {
+            Write-Log "Erreur: nom de script invalide" 'Red'
+            return
+        }
+
+        $splat = @{ demo = $DemoMode }
+
+        if ($item.params -and $item.params.Keys.Count -gt 0) {
+            foreach ($key in $item.params.Keys) {
+                $splat[$key] = $item.params[$key]
+            }
+        }
+
+        $pb.Value = 0
+        if (Get-Command $item.ScriptName -ErrorAction SilentlyContinue) {
+            Write-Log "Exécution : $($item.ScriptName)" 'DarkGreen'
+            & $item.ScriptName @splat
+            $pb.Value = $pb.Maximum
+            Write-Log "Terminé : $($item.ScriptName)" 'Green'
+        } else {
+            Write-Log "Erreur: fonction '$($item.ScriptName)' non trouvée." 'Red'
+        }
+    }) | Out-Null
+
     return $form
 }
 
-Remove-Variable form -ErrorAction SilentlyContinue
 $mainForm = Build-Form -UI $UI -MenuOptions $MenuOptions -DemoMode $DemoMode
-[void]$mainForm.ShowDialog()
+
+if ($mainForm -is [System.Windows.Forms.Form]) {
+    [void]$mainForm.ShowDialog()
+    $mainForm.Dispose()
+} else {
+    Write-Error "Build-Form n'a pas retourné un Form valide."
+}
