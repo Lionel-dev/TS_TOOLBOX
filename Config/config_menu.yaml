@@ -21,9 +21,8 @@ MenuOptions:
     SupportsDemo: false
     params: {}
   - label: "Compresser les images"
-    function: "Compress-Images"
+    function: "Compress-Image"
     SupportsDemo: true
     params:
       FolderPath: ""
-      Quality: 80
-      DateLimit: "YYYY-MM-DD"
+      Quality: 80      DateLimit: "YYYY-MM-DD"
