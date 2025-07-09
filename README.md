@@ -20,7 +20,8 @@ Elle est pensée pour être utilisée par les équipes support, infogérance ou 
 │   └── config_menu.yaml
 ├── Logs/                   # Sorties et journaux d’exécution
 ├── Options/                # Modules et scripts optionnels
-│   └── Clear-DiskSpace.ps1 # Nettoyage de l’espace disque
+│   ├── Clear-DiskSpace.ps1  # Nettoyage de l’espace disque
+│   └── Compress-Images.ps1  # Compression d’images
 ├── main.ps1                # Script principal d’exécution
 └── README.md               # Documentation du dépôt
 
@@ -29,9 +30,9 @@ Elle est pensée pour être utilisée par les équipes support, infogérance ou 
 ## 📦 Contenu actuel
 
 ### 🔍 Audit & Diagnostics
-- **`Reduce_Lossless_Images.ps1`**
-  - Réécrit les images (JPG/PNG/BMP/TIFF) pour optimiser leur taille sans perte visuelle.
-  - Peut fonctionner en mode complet ou en mode démo pour montrer un avant/après au client.
+- **`Compress-Images.ps1`**
+  - Compresse les fichiers JPG et PNG d'un dossier en ajustant la qualité.
+  - Permet de filtrer les images selon une date limite optionnelle.
 
 ### 🛠️ Actions
 *(à compléter avec tes autres outils, par exemple)*
