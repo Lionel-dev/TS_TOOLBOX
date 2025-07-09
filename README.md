@@ -37,7 +37,7 @@ Elle est pensée pour être utilisée par les équipes support, infogérance ou 
 *(à compléter avec tes autres outils, par exemple)*
 - Vérification des symlinks Outlook.
 - Export des utilisateurs et groupes locaux/AD.
-- Nettoyage d’espaces disque.
+ - Nettoyage d’espace disque.
 - Contrôle des comptes RDP autorisés.
 
 ---
