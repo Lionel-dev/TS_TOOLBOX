@@ -1,10 +1,10 @@
 MenuOptions:
   - label: "Nettoyer l'espace disque"
     function: "Clear-DiskSpace"
-    SupportsDemo: true
+    SupportsDemo: false
     params: {}
 
-  - label: "Vérifier l'état du disque"
-    function: "Check-DiskStatus"
-    SupportsDemo: false
+  - label: "Compression Image"
+    function: "Compress-Image"
+    SupportsDemo: true
     params: {}
