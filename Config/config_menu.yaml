@@ -7,4 +7,7 @@ MenuOptions:
   - label: "Compression Image"
     function: "Compress-Image"
     SupportsDemo: true
-    params: {}
+    params:
+      inputFolder: "C:\\Photos"
+      quality: 80
+      dateLimit: "2027-01-01"
