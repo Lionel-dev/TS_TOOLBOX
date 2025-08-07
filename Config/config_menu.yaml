@@ -13,6 +13,6 @@ MenuOptions:
       dateLimit: "2027-01-01"
 
   - label: "Symlink"
-    function: "Clear-DiskSpace"
+    function: "Out-Symlink"
     SupportsDemo: false
     params: {}
