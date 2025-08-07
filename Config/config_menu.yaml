@@ -11,3 +11,8 @@ MenuOptions:
       inputFolder: "C:\\Photos"
       quality: 80
       dateLimit: "2027-01-01"
+
+  - label: "Symlink"
+    function: "Clear-DiskSpace"
+    SupportsDemo: false
+    params: {}
