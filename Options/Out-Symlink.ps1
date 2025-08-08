@@ -1,136 +1,116 @@
 function Out-Symlink {
-    
-    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
-        [Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Host "Ce script doit être exécuté en tant qu'administrateur."
-        pause
-        exit
-    }
+    <#
+    .SYNOPSIS
+        Vérifie les symlinks Outlook pour chaque utilisateur et génère un rapport.
 
-    $usersPath = "C:\Users"
-    $htmlTempPath = Join-Path $env:TEMP "Out-Symlink-Report.html"
-    $timestamp = Get-Date -Format 'yyyy-MM-dd_HHmmss'
-    $logFolder = Join-Path $PSScriptRoot "..\Logs"
-    $htmlLogPath = Join-Path $logFolder "Out-Symlink_$timestamp.html"
-    $batLogPath = Join-Path $logFolder "Out-Symlink_$timestamp.bat"
+    .DESCRIPTION
+        Ce script parcourt tous les dossiers utilisateurs du répertoire spécifié par UsersPath,
+        vérifie si le dossier Outlook est un lien symbolique et compare sa cible avec
+        ExpectedTargetPattern. Un rapport HTML et un fichier BAT sont générés.
+        La barre de progression et les journaux sont mis à jour via les fonctions du
+        module TS-Toolbox.Common (Write-Log et Update-ProgressSafe). Le paramètre
+        DemoMode empêche l’ouverture automatique du rapport après génération.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory)][string]$UsersPath,
+        [Parameter(Mandatory)][string]$ExpectedTargetPattern,
+        [System.Windows.Forms.ProgressBar]$ProgressBar,
+        [switch]$DemoMode
+    )
 
-    # Logo en base64
-    $logoPath = Join-Path $PSScriptRoot "..\Images\logo.png"
-    $logoData = ""
-    if (Test-Path $logoPath) {
-        $bytes = [System.IO.File]::ReadAllBytes($logoPath)
-        $base64 = [Convert]::ToBase64String($bytes)
-        $logoData = "data:image/png;base64,$base64"
-    }
+    # Vérifie les droits administrateur
+    Ensure-Admin
+    Write-Log "Vérification des symlinks Outlook dans '$UsersPath'" 'DarkCyan'
 
-    New-Item -ItemType Directory -Path $logFolder -Force | Out-Null
+    # Comptes à exclure
+    $exclude = @(
+        'Default','Default User','Public','All Users','desktop.ini',
+        'WDAGUtilityAccount','Administrator','DefaultAppPool','zabbix'
+    )
 
-    $totalUsers = 0; $total = 0; $ok = 0; $ko = 0; $invalid = 0; $missing = 0; $multiOst = 0
-    $multiOstPaths = @(); $mklinkCommands = @()
-    $exclude = @("Default", "Default User", "Public", "All Users", "desktop.ini", "WDAGUtilityAccount", "Administrator", "DefaultAppPool", "zabbix")
+    # Collecte des dossiers utilisateurs
+    $users = Get-ChildItem -Path $UsersPath -Directory -Force |
+             Where-Object { $_.Name -notin $exclude }
+    $countUsers = $users.Count
+    if ($countUsers -eq 0) { $countUsers = 1 }
+    $index = 0
 
-    $html = @"
-<!DOCTYPE html>
-<html lang='fr'>
-<head>
-<meta charset='utf-8'>
-<title>Rapport Symlinks Outlook</title>
-<style>
-body { font-family: sans-serif; margin: 20px; }
-h1, h2, h3 { color: #003366; }
-img.logo { display: block; margin: 20px auto; max-width: 400px; }
-.ok { color: green; }
-.ko { color: red; }
-.note { color: orange; }
-table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-td, th { border: 1px solid #ddd; padding: 8px; }
-th { background-color: #f2f2f2; }
-pre { background-color: #f8f8f8; padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; }
-</style>
-</head>
-<body>
-"@
+    $rows    = New-Object System.Collections.Generic.List[string]
+    $mklinks = New-Object System.Collections.Generic.List[string]
 
-    if ($logoData) {
-        $html += "<img src='$logoData' alt='Logo Convergence' class='logo' />"
-    }
+    foreach ($u in $users) {
+        $index++
+        $percent = [int]([math]::Floor($index * 100 / $countUsers))
+        Update-ProgressSafe -ProgressBar $ProgressBar -Percent $percent
 
-    $html += "<h1>Rapport de vérification des symlinks Outlook</h1>"
-    $html += "<table><tr><th>Utilisateur</th><th>État</th><th>Détails</th><th>Dossier</th></tr>"
+        $userName    = $u.Name
+        $outlookPath = Join-Path $u.FullName 'AppData\Local\Microsoft\Outlook'
+        $expected    = $ExpectedTargetPattern.Replace('{user}', $userName)
+        $mklinks.Add("mklink /D `"$outlookPath`" `"$expected`"")
 
-    Get-ChildItem $usersPath -Directory -Force | ForEach-Object {
-        $user = $_.Name
-        if ($exclude -contains $user) { return }
+        $state   = 'KO'
+        $details = ''
 
-        $totalUsers++
-        $outlookPath = "$usersPath\$user\AppData\Local\Microsoft\Outlook"
-        $expectedTarget = "D:\USERS\$user\Outlook"
-        $mklinkCommands += "mklink /D `"$outlookPath`" `"$expectedTarget`""
-
-        try {
-            $sid = (New-Object System.Security.Principal.NTAccount($user)).Translate([System.Security.Principal.SecurityIdentifier])
-            $fullName = $sid.Translate([System.Security.Principal.NTAccount]).Value
-        } catch { $fullName = $user }
-
-        $link = ""
-        if (Test-Path $expectedTarget) {
-            $safePath = $expectedTarget.Replace('\', '/')
-            $link = "<a href='file:///$safePath'>Ouvrir</a>"
-        }
-
-        if (Test-Path $outlookPath) {
-            $total++
+        if (-not (Test-Path $outlookPath)) {
+            $details = 'Dossier Outlook introuvable'
+        } else {
             $item = Get-Item $outlookPath -Force
             if (-not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-                $html += "<tr><td>$fullName</td><td class='ko'>KO</td><td>Pas de symlink vers D:\USERS</td><td>$link</td></tr>`n"
-                $ko++
+                $details = 'Pas de symlink'
             } else {
                 $target = $item.Target
-                if ($target -ne $expectedTarget) {
-                    $html += "<tr><td>$fullName</td><td class='ko'>KO</td><td>Lien vers '$target' au lieu de '$expectedTarget'</td><td>$link</td></tr>`n"
-                    $invalid++; $ko++
+                if ($target -ne $expected) {
+                    $details = "Mauvaise cible : '$target' au lieu de '$expected'"
                 } elseif (-not (Test-Path $target)) {
-                    $html += "<tr><td>$fullName</td><td class='ko'>KO</td><td>La cible '$target' est absente</td><td></td></tr>`n"
-                    $missing++; $ko++
+                    $details = "Cible absente : '$target'"
                 } else {
-                    $html += "<tr><td>$fullName</td><td class='ok'>OK</td><td>Lien valide vers '$target'</td><td>$link</td></tr>`n"
-                    $ok++
+                    $state   = 'OK'
+                    $details = "Lien valide vers '$target'"
                     try {
-                        $ostFiles = Get-ChildItem -Path $target -Filter *.ost -ErrorAction SilentlyContinue
+                        $ostFiles = Get-ChildItem -Path $target -Filter '*.ost' -ErrorAction SilentlyContinue
                         if ($ostFiles.Count -gt 1) {
-                            $multiOst++
-                            $multiOstPaths += $target
-                            $html += "<tr><td colspan='4' class='note'>[$fullName] : $($ostFiles.Count) fichiers OST détectés :</td></tr>`n"
-                            foreach ($f in $ostFiles | Sort-Object Length -Descending) {
-                                $size = [math]::Round($f.Length / 1MB, 1)
-                                $noteClass = if ($size -ge 200) { "ko" } else { "note" }
-                                $html += "<tr><td colspan='4' class='$noteClass'>- $($f.Name) : $size Mo</td></tr>`n"
-                            }
+                            $details += ' - ' + $ostFiles.Count + ' fichiers OST détectés'
                         }
                     } catch {}
                 }
             }
-        } else {
-            $html += "<tr><td>$fullName</td><td class='note'>INFO</td><td>Aucun dossier Outlook détecté</td><td></td></tr>`n"
         }
+        $class  = if ($state -eq 'OK') { 'ok' } else { 'ko' }
+        $encoded = [System.Web.HttpUtility]::HtmlEncode($details)
+        $rows.Add("<tr><td>$userName</td><td class='$class'>$state</td><td>$encoded</td></tr>")
     }
 
-    $html += "</table>`n"
-    $html += "<h2>Résumé</h2><ul>`n"
-    $html += "<li>Profils utilisateurs détectés : <strong>$totalUsers</strong></li>`n"
-    $html += "<li>Avec dossier Outlook : <strong>$total</strong></li>`n"
-    $html += "<li><span class='ok'>OK</span> : $ok</li>`n"
-    $html += "<li><span class='ko'>KO (pas de lien)</span> : $($ko - $invalid - $missing)</li>`n"
-    $html += "<li><span class='ko'>KO (mauvais lien)</span> : $invalid</li>`n"
-    $html += "<li><span class='ko'>KO (cible absente)</span> : $missing</li>`n"
-    $html += "<li><span class='note'>Multi fichiers OST</span> : $multiOst</li>`n"
-    $html += "</ul>`n"
-    $html += "<h3>Commandes mklink proposées</h3><pre>" + ($mklinkCommands -join "`r`n") + "</pre>`n"
-    $html += "</body></html>"
+    # Résumé
+    $okCount = ($rows | Where-Object { $_ -like "*class='ok'*" }).Count
+    $koCount = ($rows | Where-Object { $_ -like "*class='ko'*" }).Count
+    $summary = "Profils utilisateurs détectés : $($users.Count)`nOK : $okCount`nKO : $koCount"
 
-    $html | Out-File -Encoding utf8 -FilePath $htmlTempPath -Force
-    $html | Out-File -Encoding utf8 -FilePath $htmlLogPath -Force
-    $mklinkCommands -join "`r`n" | Out-File -Encoding ascii -FilePath $batLogPath -Force
+    # Récupération du template HTML
+    $tplPath = Join-Path $PSScriptRoot '..\Templates\OutSymlinkReport.html'
+    if (-not (Test-Path $tplPath)) {
+        throw "Template HTML introuvable : $tplPath"
+    }
+    $html = Get-Content $tplPath -Raw -Encoding UTF8
+    $html = $html.Replace('{{GeneratedAt}}', (Get-Date).ToString())
+    $html = $html.Replace('{{Rows}}', ($rows -join "`r`n"))
+    $html = $html.Replace('{{Summary}}', $summary)
+    $html = $html.Replace('{{Mklink}}', ($mklinks -join "`r`n"))
 
-    Start-Process $htmlTempPath
+    # Sauvegarde dans le dossier Logs
+    $logsDir = Join-Path $PSScriptRoot '..\Logs'
+    New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HHmmss'
+    $htmlFile  = Join-Path $logsDir "Out-Symlink_$timestamp.html"
+    $batFile   = Join-Path $logsDir "Out-Symlink_$timestamp.bat"
+
+    if ($PSCmdlet.ShouldProcess($htmlFile, 'Écriture du rapport HTML')) {
+        $html | Out-File -FilePath $htmlFile -Encoding UTF8 -Force
+        ($mklinks -join "`r`n") | Out-File -FilePath $batFile -Encoding ascii -Force
+        if (-not $DemoMode) {
+            Start-Process $htmlFile
+        }
+    }
+    Update-ProgressSafe -ProgressBar $ProgressBar -Percent 100
+    Write-Log ("Rapport généré : $htmlFile") 'Green'
 }

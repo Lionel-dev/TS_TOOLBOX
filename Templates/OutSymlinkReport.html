@@ -1,0 +1,34 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Rapport Symlinks Outlook</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    h1,h2 { color: #003366; }
+    .ok { color: green; } .ko { color: red; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    td, th { border: 1px solid #ddd; padding: 8px; }
+    th { background-color: #f2f2f2; }
+    pre { background-color: #f8f8f8; padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Rapport de vérification des symlinks Outlook</h1>
+  <p>Généré le {{GeneratedAt}}</p>
+  <h2>Résultats</h2>
+  <table>
+    <thead>
+      <tr><th>Utilisateur</th><th>État</th><th>Détails</th></tr>
+    </thead>
+    <tbody>
+      {{Rows}}
+    </tbody>
+  </table>
+  <h2>Résumé</h2>
+  <pre>{{Summary}}</pre>
+  <h2>Commandes mklink proposées</h2>
+  <pre>{{Mklink}}</pre>
+</body>
+</html>

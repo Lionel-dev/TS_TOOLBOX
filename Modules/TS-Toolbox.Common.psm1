@@ -9,12 +9,7 @@ function Set-LogControl {
 }
 
 function Append-RtbLine {
-    param(
-        [System.Windows.Forms.RichTextBox]$Rtb,
-        [string]$Text,
-        [string]$Color = 'Black'
-    )
-
+    param([System.Windows.Forms.RichTextBox]$Rtb, [string]$Text, [string]$Color = 'Black')
     $action = {
         param($rtb,$t,$c)
         $rtb.SelectionStart  = $rtb.TextLength
@@ -22,7 +17,6 @@ function Append-RtbLine {
         $rtb.AppendText("$t`r`n")
         $rtb.SelectionColor  = $rtb.ForeColor
     }
-
     if ($Rtb.InvokeRequired) {
         $null = $Rtb.BeginInvoke($action, $Rtb, $Text, $Color)
     } else {
@@ -34,13 +28,10 @@ function Write-Log {
     param([string]$Message, [string]$Color = 'Black')
     $ts   = (Get-Date -Format 'HH:mm:ss')
     $line = "[$ts] $Message"
-
     if ($script:LogControl -and -not $script:LogControl.IsDisposed) {
         Append-RtbLine -Rtb $script:LogControl -Text $line -Color $Color
         return
     }
-
-    # Fallback console si l'UI n'est pas initialisée/disponible
     Write-Host $line
 }
 
@@ -54,6 +45,35 @@ function Update-ProgressSafe {
             $ProgressBar.Value = $p
         }
         [System.Windows.Forms.Application]::DoEvents()
+    }
+}
+
+function Convert-StringToType {
+    param(
+        [Parameter(Mandatory)][string]$Input,
+        [Parameter(Mandatory)][ValidateSet('string','int','datetime','bool','path','percent')]$Type
+    )
+    switch ($Type) {
+        'string'   { return $Input }
+        'int'      { return [int]$Input }
+        'datetime' { return [datetime]$Input }
+        'bool'     { return [bool]::Parse($Input) }
+        'path'     {
+            if (-not (Test-Path $Input)) { throw \"Chemin introuvable: $Input\" }
+            return (Resolve-Path $Input).Path
+        }
+        'percent'  {
+            $v = [int]$Input
+            if ($v -lt 1 -or $v -gt 100) { throw \"Pourcentage invalide (1-100): $v\" }
+            return $v
+        }
+    }
+}
+
+function Ensure-Admin {
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw \"Ce script nécessite des droits administrateur.\"
     }
 }
 
