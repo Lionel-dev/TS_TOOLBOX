@@ -1,4 +1,5 @@
 function Clear-DiskSpace {
+    
     <#
     .SYNOPSIS
         Nettoie différents emplacements temporaires et lance l'outil Windows Cleanmgr.

@@ -1,4 +1,5 @@
 function Out-Symlink {
+    
     if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(`
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "Ce script doit être exécuté en tant qu'administrateur."

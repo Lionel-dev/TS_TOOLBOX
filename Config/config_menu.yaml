@@ -1,18 +1,35 @@
 MenuOptions:
   - label: "Nettoyer l'espace disque"
     function: "Clear-DiskSpace"
-    SupportsDemo: false
-    params: {}
+    SupportsDemo: true
+    params: []
 
   - label: "Compression Image"
     function: "Compress-Image"
     SupportsDemo: true
     params:
-      inputFolder: "C:\\Photos"
-      quality: 80
-      dateLimit: "2027-01-01"
+      - Name: "InputFolder"
+        Type: "path"
+        Default: "C:\\Photos"
+        Prompt: "Dossier source des images"
+      - Name: "Quality"
+        Type: "percent"
+        Default: 80
+        Prompt: "Qualité JPEG (1-100)"
+      - Name: "DateLimit"
+        Type: "datetime"
+        Default: "2025-01-01"
+        Prompt: "Ne traiter que les fichiers antérieurs à (YYYY-MM-DD)"
 
-  - label: "Symlink"
+  - label: "Symlink Outlook"
     function: "Out-Symlink"
     SupportsDemo: false
-    params: {}
+    params:
+      - Name: "UsersPath"
+        Type: "path"
+        Default: "C:\\Users"
+        Prompt: "Chemin des profils utilisateurs"
+      - Name: "ExpectedTargetPattern"
+        Type: "string"
+        Default: "D:\\USERS\\{user}\\Outlook"
+        Prompt: "Modèle de cible attendu pour les liens symboliques"

@@ -3,6 +3,7 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
 function Compress-Image {
+    
     <#
     .SYNOPSIS
         Compresse les images JPEG et PNG d’un dossier.

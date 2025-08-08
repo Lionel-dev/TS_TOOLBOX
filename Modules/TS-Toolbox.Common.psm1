@@ -57,4 +57,4 @@ function Update-ProgressSafe {
     }
 }
 
-Export-ModuleMember -Function Set-LogControl, Write-Log, Update-ProgressSafe
+Export-ModuleMember -Function Set-LogControl, Write-Log, Update-ProgressSafe, Convert-StringToType, Ensure-Admin
