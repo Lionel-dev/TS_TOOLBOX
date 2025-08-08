@@ -139,7 +139,6 @@ function Run-DemoMode {
     }
 
     Write-Log "Mode démo : compression de 3 images générées dans '$demoDir'" 'DarkGray'
-    # On réutilise le même script sans le mode démo pour compresser les images créées
     Compress-Image -InputFolder $demoDir -Quality 75 -DateLimit (Get-Date)
     Write-Log "Mode démo terminé. Les images générées se trouvent dans '$demoDir'." 'DarkGray'
 }

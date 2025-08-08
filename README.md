@@ -50,18 +50,17 @@ Elle est pensée pour être utilisée par les équipes support, infogérance ou 
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\nom_du_script.ps1 -paramètres
+Tous les scripts fonctionnent en local et affichent un bilan clair à la fin.
 ```
 
-Tous les scripts fonctionnent en local et affichent un bilan clair à la fin.
-
-# 📝 Conventions
+📝 Conventions
 Tous les scripts demandent des paramètres explicites (-InputFolder, etc.).
 
 Aucun ne modifie sans votre confirmation (sauf ceux explicitement prévus).
 
 Une version « démo » est incluse pour certains scripts afin de rassurer les clients sans toucher aux données en production.
 
-# 🔧 Prérequis
+🔧 Prérequis
 Windows Server ou Windows 10/11
 
 PowerShell ≥ 5.1
@@ -70,12 +69,15 @@ Droits administrateur recommandés pour certains scripts
 
 Pas besoin d’installation d’outils tiers
 
-# 👥 Destinataires
-## 👨‍💻 Équipe support / infogérance
-## 📦 Livré pour une utilisation interne et démonstrations clients.
-
-# 📄 Licence
+👥 Destinataires
+👨‍💻 Équipe support / infogérance
+📦 Livré pour une utilisation interne et démonstrations clients.
+📄 Licence
 MIT Licence — vous pouvez utiliser, modifier et améliorer les scripts.
 Pensez à valider en interne avant de distribuer à des tiers.
 
+bash
+Copier
+Modifier
 
+Ces fichiers constituent l’ensemble du projet tel qu’il est actuellement, avec la version corrigée de `main.ps1` pour éviter l’erreur d’addition.

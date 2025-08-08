@@ -1,6 +1,6 @@
 Interface:
   Title: "TS Toolbox"
-  Size: { Width: 800, Height: 600 }
+  Size: { Width: 800, Height: 650 }
   StartPosition: CenterScreen
   ListBox:
     Location: { X: 10, Y: 10 }
@@ -16,7 +16,11 @@ Interface:
   Buttons:
     Run:
       Text: "Exécuter"
-      Location: { X: 10, Y: 530 }
+      Location: { X: 10, Y: 550 }
+      Size: { Width: 100, Height: 30 }
+    Close:
+      Text: "Fermer"
+      Location: { X: 120, Y: 550 }
       Size: { Width: 100, Height: 30 }
 
 ModeChooser:
