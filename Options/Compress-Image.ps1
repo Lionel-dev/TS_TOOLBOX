@@ -1,205 +1,144 @@
-﻿Add-Type -AssemblyName System.Drawing
+﻿# Chargement des assemblies nécessaires pour manipuler les images et l’interface WinForms
+Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName Microsoft.VisualBasic
 
 function Compress-Image {
-    [CmdletBinding()]
-    param (
-        [switch]$demo,
-        [string]$inputFolder,
-        [int]$quality,
-        [datetime]$dateLimit
+    <#
+    .SYNOPSIS
+        Compresse les images JPEG et PNG d’un dossier.
+    .DESCRIPTION
+        Cette version harmonisée accepte un mode démo (aucune suppression/modification réelle),
+        un dossier en entrée, un taux de qualité, une date limite pour filtrer les fichiers,
+        ainsi qu’une barre de progression WinForms optionnelle. Elle supporte aussi
+        -WhatIf/-Confirm via SupportsShouldProcess.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [switch]$DemoMode,
+        [string]$InputFolder = (Get-Location),
+        [ValidateRange(1,100)][int]$Quality = 80,
+        [datetime]$DateLimit = (Get-Date),
+        [System.Windows.Forms.ProgressBar]$ProgressBar
     )
 
-    if ($demo) {
+    # Mode démonstration : on appelle simplement Run-DemoMode puis on quitte
+    if ($DemoMode) {
         Run-DemoMode
         return
     }
 
-    # En prod → proposer de valider/modifier les paramètres
-    $inputFolder = Ask-IfNeeded -name 'inputFolder' -value $inputFolder
-    $quality     = Ask-IfNeeded -name 'quality' -value $quality
-    $dateLimit   = Ask-IfNeeded -name 'dateLimit' -value $dateLimit
+    # Vérifie l’existence du dossier cible
+    if (-not (Test-Path $InputFolder)) {
+        throw "Le dossier spécifié '$InputFolder' n'existe pas."
+    }
 
-    Write-Log "Compression des images dans : $inputFolder avec qualité $quality% avant $dateLimit" 'DarkGreen'
-    Compress-Image-Internal -inputFolder $inputFolder -quality $quality -dateLimit $dateLimit
-}
+    Write-Log "Compression des images dans '$InputFolder' avec qualité $Quality % avant le $DateLimit" 'DarkGreen'
 
-function Ask-IfNeeded {
-    param(
-        [string]$name,
-        [string]$value
-    )
-    $val = [Microsoft.VisualBasic.Interaction]::InputBox(
-        "Valeur pour '$name' (actuelle : $value) :", 
-        "Paramètre : $name", 
-        $value
-    )
-    if ($val) { return $val } else { return $value }
-}
+    # Récupération des fichiers à compresser
+    $files = Get-ChildItem -Path $InputFolder -Include *.jpg,*.jpeg,*.png -Recurse |
+             Where-Object { $_.LastWriteTime -lt $DateLimit }
 
-function Compress-Image-Internal {
-    param (
-        [string]$inputFolder,
-        [int]$quality,
-        [datetime]$dateLimit
-    )
+    $total = $files.Count
+    $index = 0
 
-    $totalSizeBefore = 0
-    $totalSizeAfter = 0
+    foreach ($file in $files) {
+        $index++
+        # Mise à jour de la barre de progression si nécessaire
+        if ($ProgressBar) {
+            $ProgressBar.Value = [Math]::Min([Math]::Floor($index * 100 / $total), $ProgressBar.Maximum)
+        }
 
-    Get-ChildItem -Path $inputFolder -Include *.jpg, *.jpeg, *.png -Recurse |
-    Where-Object { $_.LastWriteTime -lt $dateLimit } | ForEach-Object {
-
-        $inputPath = $_.FullName
-        $tempPath = [System.IO.Path]::Combine($_.DirectoryName, "$($_.BaseName).temp$($_.Extension)")
+        $inputPath = $file.FullName
+        $tempPath  = Join-Path $file.DirectoryName "$($file.BaseName).temp$($file.Extension)"
 
         try {
-            $originalSize = (Get-Item $inputPath).Length
-            $totalSizeBefore += $originalSize
-
-            $image = [System.Drawing.Image]::FromFile($inputPath)
-            $bitmap = New-Object System.Drawing.Bitmap $image.Width, $image.Height
+            # Chargement de l’image et création d’un bitmap modifiable
+            $image    = [System.Drawing.Image]::FromFile($inputPath)
+            $bitmap   = New-Object System.Drawing.Bitmap $image.Width, $image.Height
             $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
             $graphics.DrawImage($image, 0, 0, $image.Width, $image.Height)
             $image.Dispose()
             $graphics.Dispose()
 
-            $ext = $_.Extension.ToLowerInvariant()
-            if ($ext -eq '.jpg' -or $ext -eq '.jpeg') {
-                Compress-Jpeg -bitmap $bitmap -tempPath $tempPath -quality $quality
+            # Choix du type de compression selon l’extension
+            $ext = $file.Extension.ToLowerInvariant()
+            if ($ext -in @('.jpg','.jpeg')) {
+                Compress-Jpeg -bitmap $bitmap -tempPath $tempPath -quality $Quality
             } else {
-                Compress-Png -bitmap $bitmap -tempPath $tempPath
+                Compress-Png  -bitmap $bitmap -tempPath $tempPath
             }
-
             $bitmap.Dispose()
 
-            Remove-Item $inputPath -Force
-            Rename-Item -Path $tempPath -NewName $_.Name
-
-            $compressedSize = (Get-Item $inputPath).Length
-            $totalSizeAfter += $compressedSize
-
+            # Suppression de l’original et renommage du fichier compressé si l’utilisateur confirme
+            if ($PSCmdlet.ShouldProcess($inputPath, 'Compression')) {
+                Remove-Item $inputPath -Force
+                Rename-Item -Path $tempPath -NewName $file.Name
+            } else {
+                Remove-Item -Path $tempPath -Force
+            }
         } catch {
-            Write-Log "Erreur traitement : $_" 'Red'
+            Write-Log "Erreur pendant le traitement de '$inputPath' : $_" 'Red'
+            if (Test-Path $tempPath) { Remove-Item $tempPath -Force }
         }
     }
 
-    $totalGain = [math]::Round(($totalSizeBefore - $totalSizeAfter) /1MB, 2)
-    Write-Log "Compression terminée. Gain total : $totalGain MB" 'Green'
+    if ($ProgressBar) { $ProgressBar.Value = $ProgressBar.Maximum }
+    Write-Log "Compression terminée." 'Green'
 }
 
 function Compress-Jpeg {
-    param (
+    param(
         [System.Drawing.Bitmap]$bitmap,
         [string]$tempPath,
         [int]$quality
     )
     try {
         $encoderParams = New-Object System.Drawing.Imaging.EncoderParameters(1)
-        $encoderParam = New-Object System.Drawing.Imaging.EncoderParameter(
+        $encoderParam  = New-Object System.Drawing.Imaging.EncoderParameter(
             [System.Drawing.Imaging.Encoder]::Quality, $quality
         )
         $encoderParams.Param[0] = $encoderParam
         $jpegCodec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageDecoders() |
                      Where-Object { $_.FormatID -eq [System.Drawing.Imaging.ImageFormat]::Jpeg.Guid }
-
         $bitmap.Save($tempPath, $jpegCodec, $encoderParams)
     } catch {
-        Write-Log "Erreur JPEG : $_" 'Red'
+        Write-Log "Erreur JPEG : $_" 'Red'
     }
 }
 
 function Compress-Png {
-    param (
+    param(
         [System.Drawing.Bitmap]$bitmap,
         [string]$tempPath
     )
     try {
         $bitmap.Save($tempPath, [System.Drawing.Imaging.ImageFormat]::Png)
     } catch {
-        Write-Log "Erreur PNG : $_" 'Red'
+        Write-Log "Erreur PNG : $_" 'Red'
     }
 }
 
 function Run-DemoMode {
-    $MinDemoSizeMB = 0.5
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $demoFolder = Join-Path $desktop 'DemoCompression'
+    <#
+    Crée trois images de démonstration dans un dossier temporaire,
+    puis lance la compression dessus.
+    #>
+    $demoDir = Join-Path ([System.IO.Path]::GetTempPath()) "DemoCompression_$([Guid]::NewGuid())"
+    New-Item -Path $demoDir -ItemType Directory -Force | Out-Null
 
-    if (Test-Path $demoFolder) {
-        Write-Log "Mode démo : suppression de l'ancien répertoire…" 'DarkGray'
-        Remove-Item -Path $demoFolder -Recurse -Force
+    $colors = @('Red','Green','Blue')
+    foreach ($color in $colors) {
+        $bmp      = New-Object System.Drawing.Bitmap 800, 600
+        $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+        $graphics.Clear([System.Drawing.Color]::$color)
+        $path = Join-Path $demoDir "$color-demo.png"
+        $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+        $graphics.Dispose()
+        $bmp.Dispose()
     }
 
-    Write-Log "Mode démo : création des dossiers…" 'DarkGray'
-    $originalFolder = Join-Path $demoFolder 'Original'
-    $compressedFolder = Join-Path $demoFolder 'Compressé'
-
-    New-Item -Path $originalFolder -ItemType Directory -Force | Out-Null
-    New-Item -Path $compressedFolder -ItemType Directory -Force | Out-Null
-
-    Write-Log "Mode démo : recherche d'un échantillon d'images…" 'DarkGray'
-    $samplePaths = @(
-        "$env:USERPROFILE\Pictures",
-        "$env:PUBLIC\Pictures",
-        "C:\Users",
-        "C:\",
-        "D:\", 
-        "E:\"
-    )
-
-    $images = @()
-    foreach ($path in $samplePaths) {
-        if (Test-Path $path) {
-            $found = Get-ChildItem -Path $path -Include *.jpg,*.jpeg,*.png -Recurse -ErrorAction SilentlyContinue |
-                     Where-Object { $_.Length -gt ($MinDemoSizeMB * 1MB) } |
-                     Sort-Object -Property Length -Descending
-
-            foreach ($img in $found) {
-                if ($images.Count -lt 5) {
-                    $images += $img
-                } else {
-                    break
-                }
-            }
-
-            if ($images.Count -ge 5) { break }
-        }
-    }
-
-    if ($images.Count -eq 0) {
-        Write-Log "Aucune image >${MinDemoSizeMB}MB trouvée pour la démonstration." 'Red'
-        return
-    }
-
-    if ($images.Count -lt 5) {
-        Write-Log "Seulement $($images.Count) images trouvées pour la démonstration." 'Yellow'
-    }
-
-    foreach ($img in $images) {
-        Copy-Item -Path $img.FullName -Destination $originalFolder
-    }
-
-    Write-Log "Images sélectionnées :"
-    $images | ForEach-Object {
-        Write-Log "  - $($_.Name) [$([math]::Round($_.Length/1MB,2)) MB]" 'DarkCyan'
-    }
-
-    Write-Log "Lancement de la compression démo…"
-    $sizeBefore = (Get-ChildItem -Path $originalFolder -File | Measure-Object -Property Length -Sum).Sum
-
-    Compress-Image-Internal -inputFolder $originalFolder -quality 80 -dateLimit (Get-Date)
-
-    $sizeAfter = (Get-ChildItem -Path $originalFolder -File | Measure-Object -Property Length -Sum).Sum
-
-    Get-ChildItem -Path $originalFolder -File | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination $compressedFolder
-    }
-
-    $gainMB = [math]::Round(($sizeBefore - $sizeAfter)/1MB,2)
-
-    Write-Log "=== MODE DEMO TERMINÉ ===" 'Green'
-    Write-Log "Gain obtenu : $gainMB MB" 'Green'
-    Write-Log "Résultats dans : $demoFolder" 'Green'
+    Write-Log "Mode démo : compression de 3 images générées dans '$demoDir'" 'DarkGray'
+    # On réutilise le même script sans le mode démo pour compresser les images créées
+    Compress-Image -InputFolder $demoDir -Quality 75 -DateLimit (Get-Date)
+    Write-Log "Mode démo terminé. Les images générées se trouvent dans '$demoDir'." 'DarkGray'
 }
